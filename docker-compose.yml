@@ -1,48 +1,123 @@
-version: "3"
-
+version: "3.7"
 services:
-  # Database
-  db_second:
-    image: mysql:5.7
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      - db_data:/var/lib/mysql
+      - html:/usr/share/nginx/html
+      - dhparam:/etc/nginx/dhparam
+      - vhost:/etc/nginx/vhost.d
+      - certs:/etc/nginx/certs:ro
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./client_max_upload_size.conf:/etc/nginx/conf.d/client_max_upload_size.conf
+      - ./www.amirazmi.dev:/etc/nginx/vhost.d/www.amirazmi.dev
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy"
     restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: wordpress
-      MYSQL_USER: wordpress
-      MYSQL_PASSWORD: wordpress
     networks:
-      - wpstarter
-  # phpmyadmin
-  phpmyadmin:
+      - net
+
+  letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    container_name: lets-encrypt-proxy-companion
     depends_on:
-      - db_second
-    image: phpmyadmin/phpmyadmin
-    restart: always
-    ports:
-      - "8080:80"
+      - "nginx-proxy"
+    volumes:
+      - certs:/etc/nginx/certs:rw
+      - vhost:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      PMA_HOST: db_second
-      MYSQL_ROOT_PASSWORD: password
+      DEFAULT_EMAIL: merbmi14@gmail.com
+    restart: always
     networks:
-      - wpstarter
-  # Wordpress
-  wordpress:
+      - net
+
+  mysqldb0:
+    image: mysql:5.7
+    environment:
+      MYSQL_DATABASE: db0
+      MYSQL_USER: db0user
+      MYSQL_PASSWORD: secret
+      MYSQL_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - "mysqldb0:/var/lib/mysql"
+    restart: always
+    networks:
+      - mysqldb0
+
+  wordpress0:
+    image: wordpress:5.8.0-php8.0-apache
+    environment:
+      WORDPRESS_DB_HOST: mysqldb0
+      WORDPRESS_DB_USER: db0user
+      WORDPRESS_DB_PASSWORD: secret
+      WORDPRESS_DB_NAME: db0
+      WORDPRESS_CONFIG_EXTRA: |
+        define('AUTOMATIC_UPDATER_DISABLED', true);
+      VIRTUAL_HOST: amirazmi.dev,www.amirazmi.dev
+      LETSENCRYPT_HOST: amirazmi.dev,www.amirazmi.dev
+    volumes:
+      - "wordpress0:/var/www/html/wp-content"
+      - "./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini"
+    restart: always
     depends_on:
-      - db_second
-    image: wordpress:latest
-    ports:
-      - "8000:80"
-    restart: always
-    volumes: ["./:/var/www/html"]
-    environment:
-      WORDPRESS_DB_HOST: db_second:3306
-      WORDPRESS_DB_USER: wordpress
-      WORDPRESS_DB_PASSWORD: wordpress
+      - mysqldb0
     networks:
-      - wpstarter
-networks:
-  wpstarter:
+      - mysqldb0
+      - net
+
+  mysqldb1:
+    image: mysql:5.7
+    environment:
+      MYSQL_DATABASE: db1
+      MYSQL_USER: db1user
+      MYSQL_PASSWORD: secret
+      MYSQL_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - "mysqldb1:/var/lib/mysql"
+    restart: always
+    networks:
+      - mysqldb1
+
+  wordpress1:
+    image: wordpress:5.8.0-php8.0-apache
+    environment:
+      WORDPRESS_DB_HOST: mariadb1
+      WORDPRESS_DB_USER: db1user
+      WORDPRESS_DB_PASSWORD: secret
+      WORDPRESS_DB_NAME: db1
+      WORDPRESS_CONFIG_EXTRA: |
+        define('AUTOMATIC_UPDATER_DISABLED', true);
+      VIRTUAL_HOST: wp-demo.amirazmi.dev
+      LETSENCRYPT_HOST: wp-demo.amirazmi.dev
+    volumes:
+      - "wordpress1:/var/www/html/wp-content"
+      - "./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini"
+    restart: always
+    depends_on:
+      - mysqldb1
+    networks:
+      - mysqldb1
+      - net
+
 volumes:
-  db_data:
+  certs:
+  html:
+  vhost:
+  dhparam:
+  mysqldb0:
+  wordpress0:
+  mysqldb1:
+  wordpress1:
+
+networks:
+  mysqldb0:
+    internal: true
+  mysqldb1:
+    internal: true
+  net:
+    external: true
